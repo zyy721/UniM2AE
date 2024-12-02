@@ -67,7 +67,7 @@ def vis_image(ori_img, pred_img, mask, model, out_dir):
 
 
 @DETECTORS.register_module()
-class UniM2AE(DynamicVoxelNet):
+class ReconstructUniM2AE(DynamicVoxelNet):
     def __init__(self, 
                  voxel_layer, 
                  voxel_encoder, 
@@ -85,7 +85,7 @@ class UniM2AE(DynamicVoxelNet):
                  init_cfg=None, 
                  freeze=None,
                  ):
-        super(UniM2AE, self).__init__(
+        super(ReconstructUniM2AE, self).__init__(
             voxel_layer=voxel_layer, 
             voxel_encoder=voxel_encoder, 
             middle_encoder=middle_encoder, 

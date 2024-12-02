@@ -8,6 +8,8 @@ import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 from mmdet3d.models.builder import BACKBONES
 
+from mmcv.runner import BaseModule
+
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -658,7 +660,7 @@ class SwinTransformer(nn.Module):
                  window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, mask_ratio=0.75):
+                 use_checkpoint=False, mask_ratio=0.75, init_cfg=None):
         super().__init__()
 
         self.num_classes = num_classes
@@ -709,16 +711,16 @@ class SwinTransformer(nn.Module):
 
         self.norm = norm_layer(self.num_features)
 
-        self.apply(self._init_weights)
+        # self.apply(self._init_weights)
 
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=.02)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
+    # def _init_weights(self, m):
+    #     if isinstance(m, nn.Linear):
+    #         trunc_normal_(m.weight, std=.02)
+    #         if isinstance(m, nn.Linear) and m.bias is not None:
+    #             nn.init.constant_(m.bias, 0)
+    #     elif isinstance(m, nn.LayerNorm):
+    #         nn.init.constant_(m.bias, 0)
+    #         nn.init.constant_(m.weight, 1.0)
 
     @torch.jit.ignore
     def no_weight_decay(self):
@@ -796,13 +798,10 @@ class SwinTransformer(nn.Module):
 
 
 @BACKBONES.register_module()
-class MAESwinEncoder(nn.Module):
-    # def __init__(self, img_size=224, patch_size=4, in_chans=3,
-    #              embed_dim=96, depths=[2, 2, 6, 2], num_heads=[3, 6, 12, 24],
-    #              window_size=7, backbone_cls=SwinTransformer, mask_ratio=0.75, **kwargs):
+class CustomMAESwinEncoder(nn.Module):
     def __init__(self, img_size=224, patch_size=4, in_chans=3,
                  embed_dim=96, depths=[2, 2, 6, 2], num_heads=[3, 6, 12, 24],
-                 window_size=7, backbone_cls=SwinTransformer, mask_ratio=0.75, checkpoint=None, **kwargs):
+                 window_size=7, backbone_cls=SwinTransformer, mask_ratio=0.75, **kwargs):
         super().__init__()
         norm_layer = partial(nn.LayerNorm, eps=1e-6)
         self.mask_ratio = mask_ratio
@@ -814,15 +813,14 @@ class MAESwinEncoder(nn.Module):
         self.num_patches = num_patches
         self.initialize_weights()
 
-        # if checkpoint is not None:
-        #     # Load the checkpoint
-        #     swin_checkpoint = torch.load(checkpoint, map_location=torch.device('cpu'))
 
-        #     # Load the state_dict from the checkpoint
-        #     self.encoder.load_state_dict(swin_checkpoint['state_dict'])
+        # Load the checkpoint
+        checkpoint = torch.load('ckpts/wint-nuimages-pretrained.pth', map_location=torch.device('cpu'))
 
-        #     print()
+        # Load the state_dict from the checkpoint
+        self.encoder.load_state_dict(checkpoint['model_state_dict'])
 
+        print()
 
         
     def initialize_weights(self):
