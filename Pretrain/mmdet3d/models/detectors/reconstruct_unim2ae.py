@@ -133,14 +133,14 @@ class ReconstructUniM2AE(DynamicVoxelNet):
     
     @torch.no_grad()
     def test_pretrain(self, img, 
-                      points, 
+                    #   points, 
                       img_metas,
                       out_dir):
         """Test function without augmentaiton."""
-        batch_size = len(points)
-        vx, vy, vz = self.middle_encoder.sparse_shape
+        # batch_size = len(points)
+        # vx, vy, vz = self.middle_encoder.sparse_shape
 
-        lidar_x, lidar_volume_embed = self.extract_feat(points, img_metas)
+        # lidar_x, lidar_volume_embed = self.extract_feat(points, img_metas)
         
         B, N, C, H, W = img.size()
         img = img.view(B * N, C, H, W)
@@ -152,119 +152,129 @@ class ReconstructUniM2AE(DynamicVoxelNet):
             img_metas,
         )
 
+        # cam_proj_feat, lidar_proj_feat = self.fusion_module(
+        #     [lidar_volume_embed, camera_volume_embed], 
+        #     lidar_x,
+        #     img_metas
+        # )
+
         cam_proj_feat, lidar_proj_feat = self.fusion_module(
-            [lidar_volume_embed, camera_volume_embed], 
-            lidar_x,
+            [[], camera_volume_embed], 
+            [],
             img_metas
         )
-        
-        cam_pred = self.relu(cam_proj_feat + camera_x.view(B*N, -1, H//32, W//32))
+
+        # cam_pred = self.relu(cam_proj_feat + camera_x.view(B*N, -1, H//32, W//32))
+        cam_pred = self.relu(cam_proj_feat)
+
         cam_pred = cam_pred.flatten(2).permute(0, 2, 1)
         cam_pred = self.camera_decoder(cam_pred, camera_ids_restore)
         
-        lidar_x[0]['output'] = lidar_proj_feat
+        # lidar_x[0]['output'] = lidar_proj_feat
         
         vis_image(img, cam_pred, camera_mask, self, out_dir)
         
-        outs = self.bbox_head(lidar_x[0], show=True)
-        pred_dict = outs[0]
-        voxel_coors = pred_dict["voxel_coors"]
-        masked_voxel_coors = pred_dict["masked_voxel_coors"]
-        unmasked_voxel_coors = pred_dict["unmasked_voxel_coors"]
+        # outs = self.bbox_head(lidar_x[0], show=True)
+        # pred_dict = outs[0]
+        # voxel_coors = pred_dict["voxel_coors"]
+        # masked_voxel_coors = pred_dict["masked_voxel_coors"]
+        # unmasked_voxel_coors = pred_dict["unmasked_voxel_coors"]
 
-        occupied = None
-        if "pred_occupied" in pred_dict:
-            occupied = -torch.ones((batch_size, vx, vy), dtype=torch.long, device=pred_dict["pred_occupied"].device)
-            index = (voxel_coors[:, 0], voxel_coors[:, 3], voxel_coors[:, 2])  # b ,x, y
-            unmasked_index = (
-                unmasked_voxel_coors[:, 0], unmasked_voxel_coors[:, 3], unmasked_voxel_coors[:, 2])
-            gt_occupied = pred_dict["gt_occupied"].long()+1  # 1 -> real voxel, 2 -> fake voxel
-            occupied[index] = 2 * gt_occupied  # 2 -> real voxel, 4 -> fake voxel
-            occupied[unmasked_index] -= 2  # 0 -> unmasked voxels 2 -> masked voxel, 4 -> fake voxel
-            occupied[index] += (torch.sigmoid(pred_dict["pred_occupied"]) + 0.5).long()
-            # 0 -> unmasked voxel predicted as real,
-            # 1 -> unmasked voxel predicted as fake,
-            # 2 -> masked voxel predicted as real,
-            # 3 -> masked voxel predicted as fake,
-            # 4 -> fake voxel predicted as real,
-            # 5 -> fake voxel predicted as fake
+        # occupied = None
+        # if "pred_occupied" in pred_dict:
+        #     occupied = -torch.ones((batch_size, vx, vy), dtype=torch.long, device=pred_dict["pred_occupied"].device)
+        #     index = (voxel_coors[:, 0], voxel_coors[:, 3], voxel_coors[:, 2])  # b ,x, y
+        #     unmasked_index = (
+        #         unmasked_voxel_coors[:, 0], unmasked_voxel_coors[:, 3], unmasked_voxel_coors[:, 2])
+        #     gt_occupied = pred_dict["gt_occupied"].long()+1  # 1 -> real voxel, 2 -> fake voxel
+        #     occupied[index] = 2 * gt_occupied  # 2 -> real voxel, 4 -> fake voxel
+        #     occupied[unmasked_index] -= 2  # 0 -> unmasked voxels 2 -> masked voxel, 4 -> fake voxel
+        #     occupied[index] += (torch.sigmoid(pred_dict["pred_occupied"]) + 0.5).long()
+        #     # 0 -> unmasked voxel predicted as real,
+        #     # 1 -> unmasked voxel predicted as fake,
+        #     # 2 -> masked voxel predicted as real,
+        #     # 3 -> masked voxel predicted as fake,
+        #     # 4 -> fake voxel predicted as real,
+        #     # 5 -> fake voxel predicted as fake
 
-        gt_num_points = None
-        diff_num_points = None
-        if "pred_num_points_masked" in pred_dict:
-            device = pred_dict["pred_num_points_masked"].device
-            gt_num_points = torch.zeros((batch_size, vx, vy), dtype=torch.long, device=device)
-            diff_num_points = torch.zeros((batch_size, vx, vy), dtype=torch.float, device=device)
-            index = (masked_voxel_coors[:, 0], masked_voxel_coors[:, 3], masked_voxel_coors[:, 2])  # b ,x, y
-            pred_num_points_masked = pred_dict["pred_num_points_masked"]
-            gt_num_points_masked = pred_dict["gt_num_points_masked"]
-            gt_num_points[index] = gt_num_points_masked.long()
-            diff_num_points[index] = gt_num_points_masked.float()-pred_num_points_masked
-        if "pred_num_points_unmasked" in pred_dict:
-            device = pred_dict["pred_num_points_unmasked"].device
-            gt_num_points = torch.zeros((batch_size, vx, vy), dtype=torch.long, device=device) if gt_num_points is None else gt_num_points
-            diff_num_points = torch.zeros((batch_size, vx, vy), dtype=torch.float, device=device) if diff_num_points is None else diff_num_points
-            index = (unmasked_voxel_coors[:, 0], unmasked_voxel_coors[:, 3], unmasked_voxel_coors[:, 2])  # b ,x, y
-            pred_num_points_unmasked = pred_dict["pred_num_points_unmasked"]
-            gt_num_points_unmasked = pred_dict["gt_num_points_unmasked"]
-            gt_num_points[index] = gt_num_points_unmasked.long()
-            diff_num_points[index] = gt_num_points_unmasked.float() - pred_num_points_unmasked
+        # gt_num_points = None
+        # diff_num_points = None
+        # if "pred_num_points_masked" in pred_dict:
+        #     device = pred_dict["pred_num_points_masked"].device
+        #     gt_num_points = torch.zeros((batch_size, vx, vy), dtype=torch.long, device=device)
+        #     diff_num_points = torch.zeros((batch_size, vx, vy), dtype=torch.float, device=device)
+        #     index = (masked_voxel_coors[:, 0], masked_voxel_coors[:, 3], masked_voxel_coors[:, 2])  # b ,x, y
+        #     pred_num_points_masked = pred_dict["pred_num_points_masked"]
+        #     gt_num_points_masked = pred_dict["gt_num_points_masked"]
+        #     gt_num_points[index] = gt_num_points_masked.long()
+        #     diff_num_points[index] = gt_num_points_masked.float()-pred_num_points_masked
+        # if "pred_num_points_unmasked" in pred_dict:
+        #     device = pred_dict["pred_num_points_unmasked"].device
+        #     gt_num_points = torch.zeros((batch_size, vx, vy), dtype=torch.long, device=device) if gt_num_points is None else gt_num_points
+        #     diff_num_points = torch.zeros((batch_size, vx, vy), dtype=torch.float, device=device) if diff_num_points is None else diff_num_points
+        #     index = (unmasked_voxel_coors[:, 0], unmasked_voxel_coors[:, 3], unmasked_voxel_coors[:, 2])  # b ,x, y
+        #     pred_num_points_unmasked = pred_dict["pred_num_points_unmasked"]
+        #     gt_num_points_unmasked = pred_dict["gt_num_points_unmasked"]
+        #     gt_num_points[index] = gt_num_points_unmasked.long()
+        #     diff_num_points[index] = gt_num_points_unmasked.float() - pred_num_points_unmasked
 
-        points = []
-        batch = []
-        if "pred_points_masked" in pred_dict:
-            pred_points_masked = pred_dict["pred_points_masked"].clone()  # M, num_chamfer_points, 3
-            M, n, C = pred_points_masked.shape
-            x_shift = (masked_voxel_coors[:, 3].type_as(pred_points_masked) * self.voxel_encoder.vx + self.voxel_encoder.x_offset)  # M
-            y_shift = (masked_voxel_coors[:, 2].type_as(pred_points_masked) * self.voxel_encoder.vy + self.voxel_encoder.y_offset)  # M
-            z_shift = (masked_voxel_coors[:, 1].type_as(pred_points_masked) * self.voxel_encoder.vz + self.voxel_encoder.z_offset)  # M
-            shift = torch.cat([x_shift.unsqueeze(-1), y_shift.unsqueeze(-1), z_shift.unsqueeze(-1)], dim=1).view(-1, 1, 3)
-            pred_points_masked[..., 0] = pred_points_masked[..., 0] * self.voxel_encoder.vx / 2  # [-1, 1] -> [voxel_encoder.vx/2, voxel_encoder.vx/2]
-            pred_points_masked[..., 1] = pred_points_masked[..., 1] * self.voxel_encoder.vy / 2  # [-1, 1] -> [voxel_encoder.vy/2, voxel_encoder.vy/2]
-            pred_points_masked[..., 2] = pred_points_masked[..., 2] * self.voxel_encoder.vz / 2  # [-1, 1] -> [voxel_encoder.vz/2, voxel_encoder.vz/2]
-            batch.append(masked_voxel_coors[:, 0].view(-1, 1).repeat(1, n).view(-1))
+        # points = []
+        # batch = []
+        # if "pred_points_masked" in pred_dict:
+        #     pred_points_masked = pred_dict["pred_points_masked"].clone()  # M, num_chamfer_points, 3
+        #     M, n, C = pred_points_masked.shape
+        #     x_shift = (masked_voxel_coors[:, 3].type_as(pred_points_masked) * self.voxel_encoder.vx + self.voxel_encoder.x_offset)  # M
+        #     y_shift = (masked_voxel_coors[:, 2].type_as(pred_points_masked) * self.voxel_encoder.vy + self.voxel_encoder.y_offset)  # M
+        #     z_shift = (masked_voxel_coors[:, 1].type_as(pred_points_masked) * self.voxel_encoder.vz + self.voxel_encoder.z_offset)  # M
+        #     shift = torch.cat([x_shift.unsqueeze(-1), y_shift.unsqueeze(-1), z_shift.unsqueeze(-1)], dim=1).view(-1, 1, 3)
+        #     pred_points_masked[..., 0] = pred_points_masked[..., 0] * self.voxel_encoder.vx / 2  # [-1, 1] -> [voxel_encoder.vx/2, voxel_encoder.vx/2]
+        #     pred_points_masked[..., 1] = pred_points_masked[..., 1] * self.voxel_encoder.vy / 2  # [-1, 1] -> [voxel_encoder.vy/2, voxel_encoder.vy/2]
+        #     pred_points_masked[..., 2] = pred_points_masked[..., 2] * self.voxel_encoder.vz / 2  # [-1, 1] -> [voxel_encoder.vz/2, voxel_encoder.vz/2]
+        #     batch.append(masked_voxel_coors[:, 0].view(-1, 1).repeat(1, n).view(-1))
             
-            gt_points_unmasked = pred_dict["gt_points_unmasked"].clone()
-            gt_points_unmasked[..., 0] = gt_points_unmasked[..., 0] * self.voxel_encoder.vx / 2  # [-1, 1] -> [voxel_encoder.vx/2, voxel_encoder.vx/2]
-            gt_points_unmasked[..., 1] = gt_points_unmasked[..., 1] * self.voxel_encoder.vy / 2  # [-1, 1] -> [voxel_encoder.vy/2, voxel_encoder.vy/2]
-            gt_points_unmasked[..., 2] = gt_points_unmasked[..., 2] * self.voxel_encoder.vz / 2  # [-1, 1] -> [voxel_encoder.vz/2, voxel_encoder.vz/2]
-            x_shift_m = (unmasked_voxel_coors[:, 3].type_as(pred_points_masked) * self.voxel_encoder.vx + self.voxel_encoder.x_offset)  # M
-            y_shift_m = (unmasked_voxel_coors[:, 2].type_as(pred_points_masked) * self.voxel_encoder.vy + self.voxel_encoder.y_offset)  # M
-            z_shift_m = (unmasked_voxel_coors[:, 1].type_as(pred_points_masked) * self.voxel_encoder.vz + self.voxel_encoder.z_offset)  # M
-            shift_m = torch.cat([x_shift_m.unsqueeze(-1), y_shift_m.unsqueeze(-1), z_shift_m.unsqueeze(-1)], dim=1).view(-1, 1, 3)
-            gt_points_unmasked = gt_points_unmasked + shift_m
+        #     gt_points_unmasked = pred_dict["gt_points_unmasked"].clone()
+        #     gt_points_unmasked[..., 0] = gt_points_unmasked[..., 0] * self.voxel_encoder.vx / 2  # [-1, 1] -> [voxel_encoder.vx/2, voxel_encoder.vx/2]
+        #     gt_points_unmasked[..., 1] = gt_points_unmasked[..., 1] * self.voxel_encoder.vy / 2  # [-1, 1] -> [voxel_encoder.vy/2, voxel_encoder.vy/2]
+        #     gt_points_unmasked[..., 2] = gt_points_unmasked[..., 2] * self.voxel_encoder.vz / 2  # [-1, 1] -> [voxel_encoder.vz/2, voxel_encoder.vz/2]
+        #     x_shift_m = (unmasked_voxel_coors[:, 3].type_as(pred_points_masked) * self.voxel_encoder.vx + self.voxel_encoder.x_offset)  # M
+        #     y_shift_m = (unmasked_voxel_coors[:, 2].type_as(pred_points_masked) * self.voxel_encoder.vy + self.voxel_encoder.y_offset)  # M
+        #     z_shift_m = (unmasked_voxel_coors[:, 1].type_as(pred_points_masked) * self.voxel_encoder.vz + self.voxel_encoder.z_offset)  # M
+        #     shift_m = torch.cat([x_shift_m.unsqueeze(-1), y_shift_m.unsqueeze(-1), z_shift_m.unsqueeze(-1)], dim=1).view(-1, 1, 3)
+        #     gt_points_unmasked = gt_points_unmasked + shift_m
             
-            points.append((pred_points_masked + shift).reshape(-1, 3))
-            points.append(gt_points_unmasked.reshape(-1, 3))
+        #     points.append((pred_points_masked + shift).reshape(-1, 3))
+        #     points.append(gt_points_unmasked.reshape(-1, 3))
 
-        if "pred_points_unmasked" in pred_dict:
-            pred_points_unmasked = pred_dict["pred_points_unmasked"]  # N-M, num_chamfer_points, 3
-            M, n, C = pred_points_unmasked.shape
-            x_shift = unmasked_voxel_coors[:, 3].type_as(pred_points_unmasked) * self.voxel_encoder.vx + self.voxel_encoder.x_offset  # M
-            y_shift = unmasked_voxel_coors[:, 2].type_as(pred_points_unmasked) * self.voxel_encoder.vy + self.voxel_encoder.y_offset  # M
-            z_shift = unmasked_voxel_coors[:, 1].type_as(pred_points_unmasked) * self.voxel_encoder.vz + self.voxel_encoder.z_offset  # M
-            shift = torch.cat([x_shift.unsqueeze(-1), y_shift.unsqueeze(-1), z_shift.unsqueeze(-1)], dim=1).view(-1, 1, 3)
-            batch.append(unmasked_voxel_coors[:, 0].view(-1, 1).repeat(1, n).view(-1))
-            points.append((pred_points_unmasked + shift).reshape(-1, 3))
-        points = torch.cat(points, dim=0) if points else None
-        batch = torch.cat(batch, dim=0) if batch else None
+        # if "pred_points_unmasked" in pred_dict:
+        #     pred_points_unmasked = pred_dict["pred_points_unmasked"]  # N-M, num_chamfer_points, 3
+        #     M, n, C = pred_points_unmasked.shape
+        #     x_shift = unmasked_voxel_coors[:, 3].type_as(pred_points_unmasked) * self.voxel_encoder.vx + self.voxel_encoder.x_offset  # M
+        #     y_shift = unmasked_voxel_coors[:, 2].type_as(pred_points_unmasked) * self.voxel_encoder.vy + self.voxel_encoder.y_offset  # M
+        #     z_shift = unmasked_voxel_coors[:, 1].type_as(pred_points_unmasked) * self.voxel_encoder.vz + self.voxel_encoder.z_offset  # M
+        #     shift = torch.cat([x_shift.unsqueeze(-1), y_shift.unsqueeze(-1), z_shift.unsqueeze(-1)], dim=1).view(-1, 1, 3)
+        #     batch.append(unmasked_voxel_coors[:, 0].view(-1, 1).repeat(1, n).view(-1))
+        #     points.append((pred_points_unmasked + shift).reshape(-1, 3))
+        # points = torch.cat(points, dim=0) if points else None
+        # batch = torch.cat(batch, dim=0) if batch else None
 
-        return {
-            "occupied_bev": occupied,
-            "gt_num_points_bev": gt_num_points,
-            "diff_num_points_bev": diff_num_points,
-            "points": points,
-            "points_batch": batch,
-            "gt_points": pred_dict["gt_points"],
-            "gt_points_unmasked": gt_points_unmasked,
-            "gt_points_batch":  pred_dict["gt_point_coors"][:, 0],
-            "point_cloud_range": self.voxel_encoder.point_cloud_range,
-            "voxel_shape": (self.voxel_encoder.vx, self.voxel_encoder.vy, self.voxel_encoder.vz)
-        }
+        # return {
+        #     "occupied_bev": occupied,
+        #     "gt_num_points_bev": gt_num_points,
+        #     "diff_num_points_bev": diff_num_points,
+        #     "points": points,
+        #     "points_batch": batch,
+        #     "gt_points": pred_dict["gt_points"],
+        #     "gt_points_unmasked": gt_points_unmasked,
+        #     "gt_points_batch":  pred_dict["gt_point_coors"][:, 0],
+        #     "point_cloud_range": self.voxel_encoder.point_cloud_range,
+        #     "voxel_shape": (self.voxel_encoder.vx, self.voxel_encoder.vy, self.voxel_encoder.vz)
+        # }
+
+        return []
     
     def forward(self,
                 img,
-                points,
+                # points,
                 img_metas,
                 return_loss=True, 
                 pretrain=False,
@@ -339,31 +349,47 @@ class ReconstructUniM2AE(DynamicVoxelNet):
             
             return losses
 
+        else:
+            # for var, name in [(points, 'points'), (img_metas, 'img_metas')]:
+            #     if not isinstance(var, list):
+            #         raise TypeError('{} must be a list, but got {}'.format(
+            #             name, type(var)))
+                    
+            # img = [img] if img is None else img
+            # return self.test_pretrain(img[0], points[0], img_metas[0], out_dir)
 
-        elif pretrain:
-            for var, name in [(points, 'points'), (img_metas, 'img_metas')]:
+            for var, name in [(img_metas, 'img_metas')]:
                 if not isinstance(var, list):
                     raise TypeError('{} must be a list, but got {}'.format(
                         name, type(var)))
                     
             img = [img] if img is None else img
-            return self.test_pretrain(img[0], points[0], img_metas[0], out_dir)
-        
-        else:
-            for var, name in [(points, 'points'), (img_metas, 'img_metas')]:
-                if not isinstance(var, list):
-                    raise TypeError('{} must be a list, but got {}'.format(
-                        name, type(var)))
+            return self.test_pretrain(img[0], img_metas[0], out_dir)
 
-            num_augs = len(points)
-            if num_augs != len(img_metas):
-                raise ValueError(
-                    'num of augmentations ({}) != num of image meta ({})'.format(
-                        len(points), len(img_metas)))
+        # elif pretrain:
+        #     for var, name in [(points, 'points'), (img_metas, 'img_metas')]:
+        #         if not isinstance(var, list):
+        #             raise TypeError('{} must be a list, but got {}'.format(
+        #                 name, type(var)))
+                    
+        #     img = [img] if img is None else img
+        #     return self.test_pretrain(img[0], points[0], img_metas[0], out_dir)
+        
+        # else:
+        #     for var, name in [(points, 'points'), (img_metas, 'img_metas')]:
+        #         if not isinstance(var, list):
+        #             raise TypeError('{} must be a list, but got {}'.format(
+        #                 name, type(var)))
+
+        #     num_augs = len(points)
+        #     if num_augs != len(img_metas):
+        #         raise ValueError(
+        #             'num of augmentations ({}) != num of image meta ({})'.format(
+        #                 len(points), len(img_metas)))
                 
-            if num_augs == 1:
-                img = [img] if img is None else img
-                return self.simple_test(points[0], img_metas[0], img[0])
-            else:
-                return self.aug_test(points, img_metas, img)
+        #     if num_augs == 1:
+        #         img = [img] if img is None else img
+        #         return self.simple_test(points[0], img_metas[0], img[0])
+        #     else:
+        #         return self.aug_test(points, img_metas, img)
 

@@ -1,6 +1,8 @@
 _base_ = [
     'sst_base.py',
-    'nuscenes.py',
+    # 'nuscenes.py',
+    'reconstruct_nuscenes.py',
+
     'cosine_2x.py',
     'default_runtime.py',
 ]
@@ -252,7 +254,6 @@ model = dict(
     ),
 
 )
-
 
 # optimizer
 lr = 2.5e-4  # max learning rate
