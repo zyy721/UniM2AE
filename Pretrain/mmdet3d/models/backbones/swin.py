@@ -873,20 +873,39 @@ class MAESwinEncoder(nn.Module):
 
         return mask, ids_restore, ids_shuffle.repeat(x.shape[0], 1)
     
-    def forward(self, x, camera_only=False):
-        # generate random mask
-        mask, ids_restore, ids_shuffle = self.random_masking(x, self.mask_ratio)
-        if not camera_only:
-            mask_full, ids_restore_full, _ = self.random_masking(x, 0)
+    def forward(self, x, camera_only=False, wo_shuffle=False):
+        if wo_shuffle:
+            # generate random mask
+            mask, ids_restore, ids_shuffle = self.random_masking(x, self.mask_ratio)
+            if not camera_only:
+                mask_full, ids_restore_full, _ = self.random_masking(x, 0)
 
-            # L -> L_vis
-            latent_full = self.encoder(x, mask_full.bool())
-        
-            latent_full_unshuffle = torch.gather(latent_full, dim=1, index=ids_restore_full.unsqueeze(-1).repeat(1, 1, latent_full.shape[2]))
-            latent_full_shuffle = torch.gather(latent_full_unshuffle, dim=1, index=ids_shuffle.unsqueeze(-1).repeat(1, 1, latent_full.shape[2]))
-            latent = latent_full_shuffle[:, :int(ids_restore.shape[1]*(1-self.mask_ratio)), :]
+                # L -> L_vis
+                latent_full = self.encoder(x, mask_full.bool())
+            
+                latent_full_unshuffle = torch.gather(latent_full, dim=1, index=ids_restore_full.unsqueeze(-1).repeat(1, 1, latent_full.shape[2]))
+                latent_full_shuffle = torch.gather(latent_full_unshuffle, dim=1, index=ids_shuffle.unsqueeze(-1).repeat(1, 1, latent_full.shape[2]))
+                latent = latent_full_shuffle[:, :int(ids_restore.shape[1]*(1-self.mask_ratio)), :]
 
-            return latent, latent_full, mask, ids_restore, ids_restore_full
+                return latent, latent_full, mask, ids_restore, ids_restore_full
+            else:
+                latent = self.encoder(x, mask.bool())
+                return latent, mask, []
+
         else:
-            latent = self.encoder(x, mask.bool())
-            return latent, mask, ids_restore
+            # generate random mask
+            mask, ids_restore, ids_shuffle = self.random_masking(x, self.mask_ratio)
+            if not camera_only:
+                mask_full, ids_restore_full, _ = self.random_masking(x, 0)
+
+                # L -> L_vis
+                latent_full = self.encoder(x, mask_full.bool())
+            
+                latent_full_unshuffle = torch.gather(latent_full, dim=1, index=ids_restore_full.unsqueeze(-1).repeat(1, 1, latent_full.shape[2]))
+                latent_full_shuffle = torch.gather(latent_full_unshuffle, dim=1, index=ids_shuffle.unsqueeze(-1).repeat(1, 1, latent_full.shape[2]))
+                latent = latent_full_shuffle[:, :int(ids_restore.shape[1]*(1-self.mask_ratio)), :]
+
+                return latent, latent_full, mask, ids_restore, ids_restore_full
+            else:
+                latent = self.encoder(x, mask.bool())
+                return latent, mask, ids_restore

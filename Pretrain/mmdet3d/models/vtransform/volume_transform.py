@@ -90,16 +90,26 @@ class VolumeTransform(nn.Module):
         camera_x,
         img_shape,
         camera_ids_restore,
-        img_metas
+        img_metas,
+        wo_shuffle=False,
     ):
-        B, N, C, H, W = img_shape
-        if self.mask_token is not None:
-            mask_tokens = self.mask_token.repeat(camera_x.shape[0], camera_ids_restore.shape[1] - camera_x.shape[1], 1)
-            camera_x = torch.cat([camera_x, mask_tokens], dim=1)
+        if wo_shuffle:
+            B, N, C, H, W = img_shape
+            # if self.mask_token is not None:
+            #     mask_tokens = self.mask_token.repeat(camera_x.shape[0], camera_ids_restore.shape[1] - camera_x.shape[1], 1)
+            #     camera_x = torch.cat([camera_x, mask_tokens], dim=1)
 
-        camera_x = torch.gather(camera_x, dim=1, index=camera_ids_restore.unsqueeze(-1).repeat(1, 1, camera_x.shape[2]))  # unshuffle
-        camera_x = camera_x.permute(0, 2, 1).view(B, N, -1, H//32, W//32)
-        
+            # camera_x = torch.gather(camera_x, dim=1, index=camera_ids_restore.unsqueeze(-1).repeat(1, 1, camera_x.shape[2]))  # unshuffle
+            camera_x = camera_x.permute(0, 2, 1).view(B, N, -1, H//32, W//32)
+        else:
+            B, N, C, H, W = img_shape
+            if self.mask_token is not None:
+                mask_tokens = self.mask_token.repeat(camera_x.shape[0], camera_ids_restore.shape[1] - camera_x.shape[1], 1)
+                camera_x = torch.cat([camera_x, mask_tokens], dim=1)
+
+            camera_x = torch.gather(camera_x, dim=1, index=camera_ids_restore.unsqueeze(-1).repeat(1, 1, camera_x.shape[2]))  # unshuffle
+            camera_x = camera_x.permute(0, 2, 1).view(B, N, -1, H//32, W//32)
+
         B, N, C, H, W = camera_x.shape
         dtype = camera_x.dtype
         volume_queries = self.volume_embedding.weight.to(dtype)

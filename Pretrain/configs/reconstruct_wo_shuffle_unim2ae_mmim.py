@@ -50,7 +50,8 @@ drop_info = (drop_info_training, drop_info_test)
 
 model = dict(
     # type='UniM2AE',
-    type='ReconstructUniM2AE',
+    # type='ReconstructUniM2AE',
+    type='ReconstructWoShuffleUniM2AE',
 
     fusion_module=dict(
         # type='MMIM',

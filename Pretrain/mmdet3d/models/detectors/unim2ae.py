@@ -273,39 +273,7 @@ class UniM2AE(DynamicVoxelNet):
                 ):
         
         if return_loss:
-            # with torch.no_grad():
-            # lidar_x, lidar_volume_embed = self.extract_feat(points, img_metas)
-            
-            # B, N, C, H, W = img.size()
-            # img = img.view(B * N, C, H, W)
-            # camera_x, camera_mask, camera_ids_restore = self.camera_encoder["backbone"](img, camera_only=True)
-            # camera_volume_embed, camera_x = self.camera_encoder["vtransform"](
-            #     camera_x, 
-            #     (B, N, C, H, W),
-            #     camera_ids_restore, 
-            #     img_metas
-            # )
-
-            # cam_proj_feat, lidar_proj_feat = self.fusion_module(
-            #     [lidar_volume_embed, camera_volume_embed], 
-            #     lidar_x,
-            #     img_metas
-            # )
-            
-            # cam_pred = self.relu(cam_proj_feat + camera_x.view(B*N, -1, H//32, W//32))
-            # cam_pred = cam_pred.flatten(2).permute(0, 2, 1)
-            # cam_pred = self.camera_decoder(cam_pred, camera_ids_restore)
-
-            # lidar_x[0]['output'] = lidar_proj_feat
-
-            # lidar_pred = self.bbox_head(lidar_x[0])
-            # losses = self.bbox_head.loss(*lidar_pred)
-            # losses['camera_loss'] = self.camera_decoder.forward_loss(img, cam_pred, camera_mask)
-            
-            # return losses
-
-            # with torch.no_grad():
-            # lidar_x, lidar_volume_embed = self.extract_feat(points, img_metas)
+            lidar_x, lidar_volume_embed = self.extract_feat(points, img_metas)
             
             B, N, C, H, W = img.size()
             img = img.view(B * N, C, H, W)
@@ -318,28 +286,23 @@ class UniM2AE(DynamicVoxelNet):
             )
 
             cam_proj_feat, lidar_proj_feat = self.fusion_module(
-                [[], camera_volume_embed], 
-                [],
+                [lidar_volume_embed, camera_volume_embed], 
+                lidar_x,
                 img_metas
             )
             
-            # cam_pred = self.relu(cam_proj_feat + camera_x.view(B*N, -1, H//32, W//32))
-            cam_pred = self.relu(cam_proj_feat)
+            cam_pred = self.relu(cam_proj_feat + camera_x.view(B*N, -1, H//32, W//32))
             cam_pred = cam_pred.flatten(2).permute(0, 2, 1)
             cam_pred = self.camera_decoder(cam_pred, camera_ids_restore)
 
-            losses = dict()
+            lidar_x[0]['output'] = lidar_proj_feat
 
-            # lidar_x[0]['output'] = lidar_proj_feat
-
-            # lidar_pred = self.bbox_head(lidar_x[0])
-            # losses = self.bbox_head.loss(*lidar_pred)
-            # losses['camera_loss'] = self.camera_decoder.forward_loss(img, cam_pred, camera_mask)
-            losses['camera_loss'] = self.camera_decoder.forward_loss(img, cam_pred, torch.ones_like(camera_mask))
+            lidar_pred = self.bbox_head(lidar_x[0])
+            losses = self.bbox_head.loss(*lidar_pred)
+            losses['camera_loss'] = self.camera_decoder.forward_loss(img, cam_pred, camera_mask)
             
             return losses
-
-
+        
         elif pretrain:
             for var, name in [(points, 'points'), (img_metas, 'img_metas')]:
                 if not isinstance(var, list):

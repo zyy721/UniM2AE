@@ -67,7 +67,8 @@ def vis_image(ori_img, pred_img, mask, model, out_dir):
 
 
 @DETECTORS.register_module()
-class ReconstructUniM2AE(DynamicVoxelNet):
+# class ReconstructUniM2AE(DynamicVoxelNet):
+class ReconstructWoShuffleUniM2AE(DynamicVoxelNet):
     def __init__(self, 
                  voxel_layer, 
                  voxel_encoder, 
@@ -85,7 +86,7 @@ class ReconstructUniM2AE(DynamicVoxelNet):
                  init_cfg=None, 
                  freeze=None,
                  ):
-        super(ReconstructUniM2AE, self).__init__(
+        super(ReconstructWoShuffleUniM2AE, self).__init__(
             voxel_layer=voxel_layer, 
             voxel_encoder=voxel_encoder, 
             middle_encoder=middle_encoder, 
@@ -144,12 +145,13 @@ class ReconstructUniM2AE(DynamicVoxelNet):
         
         B, N, C, H, W = img.size()
         img = img.view(B * N, C, H, W)
-        camera_x, camera_mask, camera_ids_restore = self.camera_encoder["backbone"](img, camera_only=True)
+        camera_x, camera_mask, camera_ids_restore = self.camera_encoder["backbone"](img, camera_only=True, wo_shuffle=True)
         camera_volume_embed, camera_x = self.camera_encoder["vtransform"](
             camera_x, 
             (B, N, C, H, W),
             camera_ids_restore, 
             img_metas,
+            wo_shuffle=True
         )
 
         # cam_proj_feat, lidar_proj_feat = self.fusion_module(
@@ -168,7 +170,7 @@ class ReconstructUniM2AE(DynamicVoxelNet):
         cam_pred = self.relu(cam_proj_feat)
 
         cam_pred = cam_pred.flatten(2).permute(0, 2, 1)
-        cam_pred = self.camera_decoder(cam_pred, camera_ids_restore)
+        cam_pred = self.camera_decoder(cam_pred, camera_ids_restore, wo_shuffle=True)
         
         # lidar_x[0]['output'] = lidar_proj_feat
         
@@ -319,12 +321,13 @@ class ReconstructUniM2AE(DynamicVoxelNet):
             
             B, N, C, H, W = img.size()
             img = img.view(B * N, C, H, W)
-            camera_x, camera_mask, camera_ids_restore = self.camera_encoder["backbone"](img, camera_only=True)
+            camera_x, camera_mask, camera_ids_restore = self.camera_encoder["backbone"](img, camera_only=True, wo_shuffle=True)
             camera_volume_embed, camera_x = self.camera_encoder["vtransform"](
                 camera_x, 
                 (B, N, C, H, W),
                 camera_ids_restore, 
                 img_metas,
+                wo_shuffle=True
             )
 
             cam_proj_feat, lidar_proj_feat = self.fusion_module(
@@ -336,7 +339,7 @@ class ReconstructUniM2AE(DynamicVoxelNet):
             # cam_pred = self.relu(cam_proj_feat + camera_x.view(B*N, -1, H//32, W//32))
             cam_pred = self.relu(cam_proj_feat)
             cam_pred = cam_pred.flatten(2).permute(0, 2, 1)
-            cam_pred = self.camera_decoder(cam_pred, camera_ids_restore)
+            cam_pred = self.camera_decoder(cam_pred, camera_ids_restore, wo_shuffle=True)
 
             losses = dict()
 

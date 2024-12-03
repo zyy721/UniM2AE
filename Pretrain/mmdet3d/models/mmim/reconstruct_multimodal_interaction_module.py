@@ -15,11 +15,13 @@ from mmcv.cnn.bricks.transformer import build_transformer_layer_sequence
 
 from mmcv.runner import force_fp32
 
-__all__ = ["MMIM"]
+# __all__ = ["MMIM"]
+__all__ = ["ReconstructMMIM"]
 
 
 @FUSERS.register_module()
-class MMIM(nn.Module):
+# class MMIM(nn.Module):
+class ReconstructMMIM(nn.Module):
     def __init__(
         self, 
         volume_h,
@@ -30,8 +32,9 @@ class MMIM(nn.Module):
         strides,
         encoder,
     ):
-        super(MMIM, self).__init__()
-        
+        # super(MMIM, self).__init__()
+        super(ReconstructMMIM, self).__init__()
+
         self.volume_h = volume_h
         self.volume_w = volume_w
         self.volume_z = volume_z
@@ -47,36 +50,36 @@ class MMIM(nn.Module):
         self.relu1 = nn.ReLU(inplace=True)
         self.relu2 = nn.ReLU(inplace=True)
         
+
         # v2 projection method
         # +----------------------------------------------------------------
-        # self.proj_cam_downsample = nn.ModuleList([
-        #         nn.Sequential(
-        #             nn.Conv2d(192, 192, kernel_size=3, stride=1, padding=1),
-        #             nn.BatchNorm2d(192),
-        #             nn.ReLU(inplace=True),
-        #         ),
-        #         nn.Sequential(
-        #             nn.Conv2d(192, 192, kernel_size=3, stride=2, padding=1),
-        #             nn.BatchNorm2d(192),
-        #             nn.ReLU(inplace=True),
-        #         ),
-        #         nn.Sequential(
-        #             nn.Conv2d(192, 384, kernel_size=3, stride=2, padding=1),
-        #             nn.BatchNorm2d(384),
-        #             nn.ReLU(inplace=True),
-        #         ),
-        #         nn.Sequential(
-        #             nn.Conv2d(384, 768, kernel_size=3, stride=2, padding=1),
-        #             nn.BatchNorm2d(768),
-        #             nn.ReLU(inplace=True),
-        #         )
-        #     ]
-        # )
+        self.proj_cam_downsample = nn.ModuleList([
+                nn.Sequential(
+                    nn.Conv2d(192, 192, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(192),
+                    nn.ReLU(inplace=True),
+                ),
+                nn.Sequential(
+                    nn.Conv2d(192, 192, kernel_size=3, stride=2, padding=1),
+                    nn.BatchNorm2d(192),
+                    nn.ReLU(inplace=True),
+                ),
+                nn.Sequential(
+                    nn.Conv2d(192, 384, kernel_size=3, stride=2, padding=1),
+                    nn.BatchNorm2d(384),
+                    nn.ReLU(inplace=True),
+                ),
+                nn.Sequential(
+                    nn.Conv2d(384, 768, kernel_size=3, stride=2, padding=1),
+                    nn.BatchNorm2d(768),
+                    nn.ReLU(inplace=True),
+                )
+            ]
+        )
         # +----------------------------------------------------------------
-        
         # v1 projection method
         # +----------------------------------------------------------------
-        self.proj_cam_downsample = nn.Conv2d(fusion_channels, 768, kernel_size=1)
+        # self.proj_cam_downsample = nn.Conv2d(fusion_channels, 768, kernel_size=1)
         # +----------------------------------------------------------------
         
         self._init_weights()
@@ -249,7 +252,7 @@ class MMIM(nn.Module):
                 this_coor[:, 1] += H / 2.0
 
                 depth_coords = this_coor[:, :2].type(torch.long)
-
+                # cam_feat [256, 704, 192], depth_coords [80000, 2], cam_volume_feat_per_batch [80000, 192], valid_mask 80000
                 cam_feat = cam_volume_feat_per_batch.new_zeros(resize_dims+(C, ))
                 valid_mask = ((depth_coords[:, 1] < resize_dims[0])
                             & (depth_coords[:, 0] < resize_dims[1])
@@ -263,6 +266,14 @@ class MMIM(nn.Module):
         
         cam_pred = torch.cat(cam_feats)
         
+        # a = np.zeros([5])
+        # b = np.array([1, 1])
+        # c = np.arange(5)
+        # d = np.zeros([5]).astype(bool)
+        # d[1] = True
+        # d[2] = True
+        # a[b] = c[d]
+
         for layer in self.proj_cam_downsample:
             cam_pred = layer(cam_pred)
 
@@ -341,41 +352,44 @@ class MMIM(nn.Module):
         return lidar_feat, camera_feat
     
     def forward(self, volume_feats, lidar_x, img_metas):
-        lidar_feat, camera_feat = self.fuse(volume_feats)
-        
+        # lidar_feat, camera_feat = self.fuse(volume_feats)
+
+        lidar_feat, camera_feat = volume_feats
+
+
         # The performance of v1 projection is slightly lower than v2 projection method
         # But the released weight was trained with v1 projection method
         # Therefore, we matain the usage of the v1 projection method here
         
         # v1 projection method
         # +----------------------------------------------------------------
-        camera_feat = camera_feat.flatten(-3)
-        C = camera_feat.size(1)
-        cam2token = lidar_x[0]['output'].new_zeros([lidar_x[3], C])
-        cam2token_bev = [i[:, lidar_x[1][n]].t() for n, i in enumerate(camera_feat)]
-        for n, batch in enumerate(cam2token_bev):
-            cam2token[lidar_x[2][n]] = batch
+        # camera_feat = camera_feat.flatten(-3)
+        # C = camera_feat.size(1)
+        # cam2token = lidar_x[0]['output'].new_zeros([lidar_x[3], C])
+        # cam2token_bev = [i[:, lidar_x[1][n]].t() for n, i in enumerate(camera_feat)]
+        # for n, batch in enumerate(cam2token_bev):
+        #     cam2token[lidar_x[2][n]] = batch
         
-        cameara_proj_feat = self.cam_transform(cam2token, lidar_x[0]['voxel_coors'], lidar_x[2], img_metas)
+        # cameara_proj_feat = self.cam_transform(cam2token, lidar_x[0]['voxel_coors'], lidar_x[2], img_metas)
         # +----------------------------------------------------------------
         
         # v2 projection method
         # +----------------------------------------------------------------
-        # camera_feat = camera_feat.flatten(2).permute(0, 2, 1)
-        # volume_index = self.get_reference_points(
-        #     self.volume_h, 
-        #     self.volume_w, 
-        #     self.volume_z, 
-        #     device=camera_feat.device
-        # )
-        # cameara_proj_feat = self.cam_transform_full(camera_feat, volume_index, img_metas)
+        camera_feat = camera_feat.flatten(2).permute(0, 2, 1)
+        volume_index = self.get_reference_points(
+            self.volume_h, 
+            self.volume_w, 
+            self.volume_z, 
+            device=camera_feat.device
+        )
+        cameara_proj_feat = self.cam_transform_full(camera_feat, volume_index, img_metas)
         # +----------------------------------------------------------------
         
-        lidar_feat = lidar_feat.flatten(-3)
-        C = lidar_feat.size(1)
-        lidar_proj_feat = lidar_x[0]['output'].new_zeros([lidar_x[3], C])
-        lidar_proj_feat_volume = [i[:, lidar_x[1][n]].t() for n, i in enumerate(lidar_feat)]
-        for n, batch in enumerate(lidar_proj_feat_volume):
-            lidar_proj_feat[lidar_x[2][n]] = batch
-
+        # lidar_feat = lidar_feat.flatten(-3)
+        # C = lidar_feat.size(1)
+        # lidar_proj_feat = lidar_x[0]['output'].new_zeros([lidar_x[3], C])
+        # lidar_proj_feat_volume = [i[:, lidar_x[1][n]].t() for n, i in enumerate(lidar_feat)]
+        # for n, batch in enumerate(lidar_proj_feat_volume):
+        #     lidar_proj_feat[lidar_x[2][n]] = batch
+        lidar_proj_feat = []
         return cameara_proj_feat, lidar_proj_feat

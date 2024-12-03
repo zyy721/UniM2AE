@@ -31,7 +31,7 @@ class MAESwinDecoder(nn.Module):
             for i in range(decoder_depth)])
 
         self.decoder_norm = norm_layer(decoder_embed_dim)
-        self.decoder_pred = nn.Linear(decoder_embed_dim, patch_size**2 * in_chans, bias=True) # encoder to decoder
+        self.decoder_pred = nn.Linear(decoder_embed_dim, patch_size**2 * in_chans, bias=True) # encoder to decoder, 512, 32*32*3
 
         self.cross_modality_module = None 
         if decoder is not None:
@@ -100,14 +100,23 @@ class MAESwinDecoder(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], 3, h * p, w * p))
         return imgs
         
-    def forward(self, x, ids_restore, lidar_x=None):
+    def forward(self, x, ids_restore, lidar_x=None, wo_shuffle=False):
         # embed tokens
         x = self.decoder_embed(x)
 
-        # append mask tokens to sequence
-        mask_tokens = self.mask_token.repeat(x.shape[0], ids_restore.shape[1] - x.shape[1], 1)
-        x_ = torch.cat([x, mask_tokens], dim=1)
-        x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))  # unshuffle
+        if wo_shuffle:
+            # append mask tokens to sequence
+            # mask_tokens = self.mask_token.repeat(x.shape[0], ids_restore.shape[1] - x.shape[1], 1)
+            # x_ = torch.cat([x, mask_tokens], dim=1)
+            # x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))  # unshuffle
+
+            x_ = x
+
+        else:
+            # append mask tokens to sequence
+            mask_tokens = self.mask_token.repeat(x.shape[0], ids_restore.shape[1] - x.shape[1], 1)
+            x_ = torch.cat([x, mask_tokens], dim=1)
+            x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))  # unshuffle
 
         if lidar_x is not None:
             _, _, H, W = lidar_x.shape
